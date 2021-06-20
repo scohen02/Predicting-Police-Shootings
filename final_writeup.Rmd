@@ -1,0 +1,378 @@
+---
+title: "QAC 385: Machine Learning and Police Brutality"
+date: "December 11, 2020"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, cache = TRUE)
+```
+
+### Team Members  
+* Andrew Martin
+* Sophie Cohen
+
+## Problem Statement
+
+The aim of this project is to determine whether modern data supports the hypothesis that police are still inherently more aggressive against minorities in the United States. The murder of George Floyd in May 2020 was unfortunately just another example of severe police brutality against black people. As most of the country was outraged, a general question arises as to whether or not police reforms targeted at mitigating certain biases have worked. Police departments and state/federal governments have invested a significant amount of funds in hopes of better police training and newer technologies (https://www.washingtonpost.com/sf/investigative/2015/11/13/forced-reforms-mixed-results/). 
+
+The data set is optimal in answering our research question given it captures the time period of significant police brutality and reforms in the U.S. (2013-2019 — see Washington Post article above). Further, after looking through various sources, these data represent one of the most comprehensive sets available for analysis. Therefore, our findings should be insightful, and could possibly push for more reforms.
+
+## Data Description
+
+We used a pooled cross-sectional dataset that maps police violence from 2013 to 2019. The dataset reports killings by police department across the United States. The source of this dataset is https://mappingpoliceviolence.org/. The data were collected from the following databases: FatalEncounters.org, the U.S. Police Shootings Database, and KilledbyPolice.net. The goal of this research collaborative is to collect "comprehensive data on police killings nationwide to quantify the impact of police violence in communities."
+
+The variables include State, City, Police Department, All People Killed by Police (1/1/2013-12/31/2019), People Killed by Police by race (Black, Hispanic, Native American, Asian, Pacific Islanders, White, Unknown Race), Total population, Populations by race (Black, White, American Indian, Asian, Hawaiian, Asian/Pacific Islander, Other, Two or more races, Hispanic), Black-White Dissimilarity Index (2010), Murder and nonnegligent manslaughter, Murder Rate, Average Annual Police Homicide Rate by race (Black, White, Hispanic), Black-White Disparity, Hispanic-White Disparity, Violent crimes (if reported by agency) by year (2013, 2014, 2015, 2016, 2017, 2018), Average Violent Crimes Reported (2013-17), Violent Crime Rate, Total Arrests by year (2013, 2014, 2015, 2016, 2017, 2018), Estimated Average Arrests per Year, Killings by Police per 10k Arrests.
+
+Most of these variables are pretty self-explanatory. The Black-White Dissimilarity measures the degree to which black people are distributed differently than white people across census tracts; this value ranges from 0 (complete integration) to 100 (complete segregation). The Black-White Disparity is the average annual police homicide rate for black people divided by the average annual police homicide rate for white people. The Hispanic-White Disparity is the same except the numerator is the average annual police homicide rate for hispanic people. Overall, a police killing is defined as "a case where a person dies as a result of being shot, beaten, restrained, intentionally hit by a police vehicle, pepper sprayed, tasered, or otherwise harmed by police officers, whether on-duty or off-duty." All variables are numeric besides State, City, and Police Department.
+
+
+## Data Preprocessing
+
+When loading in the dataset, we changed all variables into factors. The dataset had a lot of missing observations. We started by finding out how many missing values each variable had. We discovered that there were only 5 variables that had an abundance of NAs (more than 30). We decided to remove these variables, which were Hispanic People Killed by Police (1/1/2013-12/31/2019), Native American People Killed by Police (1/1/2013-12/31/2019), Asian People Killed by Police (1/1/2013-12/31/2019), Pacific Islanders Killed by Police (1/1/2013-12/31/2019), and Unknown Race People Killed by Police (1/1/2013-12/31/2019) since the high number of missing observations may make our findings less insightful or are highly correlated to other variables. Then, for the remaining missing values, we used na.roughfix in the randomForest library. The na.roughfix function imputes the missing values by median/mode. This function replaces NAs for numeric variables with the column median, and it replaces NAs for factor variables with the column mode. The code for our data preprocessing is below.
+
+Reading in the data
+```{r}
+setwd("~/Desktop/final_project") # setting the correct working directory  
+police <- read.csv("police_finaldata.csv", na.strings = "unknown", stringsAsFactors = TRUE) #reading in the data
+# the original csv file had multiple sheets. We included only the most relevant sheet in the final csv file.
+```
+
+Observing the missing observations
+```{r}
+library(tidyverse) #calling the relevant library
+map(police, ~sum(is.na(.))) # found this code from https://sebastiansauer.github.io/sum-isna/ #listing NAs by variable
+```
+
+Data management
+```{r}
+library(dplyr)
+police <- select(police, -c(5,6,7,8,10)) #deleting columns with >30 NAs
+
+library(randomForest)
+set.seed(1234)
+police <- na.roughfix(police) # imputing missing values; found this code from https://www.rdocumentation.org/packages/randomForest/versions/4.6-14/topics/na.roughfix 
+```
+
+
+## Machine Learning Approach
+
+### Random Forest 
+
+From class lecture: 
+
+Random Forest is an algorithm that consists of many decision trees. It is an improvement from simple bagging (fitting a tree to bootstrapped samples). The goal is to create individual trees, and subsequently, a "forest" of uncorrelated trees, which will yield a better prediction than that of an individual tree. Random Forest samples not just the cases, but it also samples the predictors.
+
+The steps for Random Forest are as follows: make a lot of trees by sampling N cases with replacement (observations can be present across multiple samples) from the training data
+(N is usually .63*nrows), then sample m < M variables at each node -- the variables are options for splitting in that node and m is the same at each node (sqrt(M) for classification and M/3 for regression), next make each tree without pruning, then a class is assigned to the terminal nodes based on the mode (classification) or mean (regression) of cases in that node, and finally classify the new cases by sending them down the trees -- use majority for classification and mean for regression. The latter is what is used in this project since the outcome is numerical. 
+
+Pruning is a technique used to reduce the size of decision trees. It does so by removing parts of a tree that are redundant and not essential. Pruning helps to improve prediction accuracy by avoiding overfitting (a model that models the training data too well and cannot generalize to other data).
+
+Random Forest can tell us the importance for each variable in determining the outcome variable. Variable importance is calculated by finding the total decrease in node impurities from splitting on the variable and then averaging that over all the trees. We use the Gini index to measure the node impurity for classification, and we use the residual sum of squares (RSS) to measure the node impurity for regression. In this project, we used the residual sum of squares since our outcome is numeric. 
+
+
+### Multiple Linear Regression 
+
+From class lecture as well as prior knowledge: 
+
+This technique was utilized given it is such a common one to use with a numeric outcome variable. Multiple linear regression creates a trend line that minimizes the sum of the squared residuals. The model's parameters are estimated as B1(hat) = sum [(xi - xbar)(yi-ybar)] / sum [(xi-xbar)^2] where (xi,yi) are the sample data points, and xbar & ybar are the sample means. B0(hat) = ybar - B1(hat)xbar. 
+
+Therefore, the multiple linear regression is estimated as y(hat) = B0(hat) + B1(hat)x1 + ... + Bk(hat)xk where k is the last predictor variable in the sequence of predictor variables used. Each regression is estimated with a specific sample. If the population is used (which is not observed), the model becomes the average of all the sample regressions. Yi = B0 +B1x1 + ... + Bkxk + u (disturbance term)
+
+Some important statistics when analyzing a multiple linear regression's output are : F-Statistic (a large F-stat indicates that the model as a whole is significant), Root Mean Squared Error (a high RMSE indicates that the model does not fit the data well — a linear regression likely is not the best model for the data if there is a high RMSE), R-Squared (the variation the independent variables explain in the dependent variable — an R-Squared that is less than 1% means that the model's independent variables likely do not explain much about the dependent variable), t-statistics / p-values (indicate whether or not the null hypothesis (generally 0) can be rejected. A high t-stat indicates that the estimation is far enough away from the null to reject, and a low p-value means that it is a low probability that the estimation is different from the null by chance. In both cases, one would reject the null hypothesis of 0. 
+
+
+### Stepwise AIC 
+
+From class lecture: 
+
+Stepwise multiple regression using AIC depends on minimizing the AIC parameter. AIC (Akaike's Information Criterion) is defined as 2k - 2log(L) where k is the number of predictors in the model and L is the maximized likelihood parameter (class notes). Put more simply, L is the fit between the model and the data (class notes). Minimizing AIC is logical given that a higher value of k (more predictors, reducing adjusted R-Squared) leads to a higher AIC. A higher value of L reduces the AIC. In summary, we would like to have the highest probability of observing the actual data with the parameters in our model with the least number of variables to do it. 
+
+Stepwise regression comes in two forms. The first one is forward stepwise. In this method, the model begins with one predictor, then adds the predictor that improves the model the most (i.e., minimizing the AIC parameter). For example, given two variables to choose from, if one variable decreases the model's AIC with the data more than the other variable, all else equal, then the former variable will  be added. Once adding more variables does not decrease AIC anymore, the model is finished. The second form of stepwise regression is backwards. Here, the model begins with all the independent variables with the variable that contributes least to the model subsequently removed. For these methods to work, there need to be a stopping rule, which in the case of our model, is minimizing AIC and maximizing adjusted R-Squared.
+
+Similar to traditional multiple linear regression, stepwise AIC linear regression's effectiveness predicates on the RMSE and adjusted R-Squared values. A more effective model will explain more variation in the dependent variable and fit the data well simultaneously. 
+
+### Regression Trees 
+
+Class notes and help function in r console:
+
+Using Regression trees allows users to make splits on independent variables and arrive at an outcome. Specifically, for the 'ctree' function used in this project, you start with the variable that has the strongest association with the response variable. That is, the variable that has the lowest p-value or highest t-statistic. Split the node into a binary. The binary decision value is chosen that reduces the explained sum of squares (SSE) (sum(yhat-ybar)^2) (class notes). If the null hypothesis cannot be rejected, you would stop splits. You may also stop splitting if there is not enough data necessary left to split (or no reduction in SSE). 
+
+The error is the RMSE, the maximum depth is generally 30 nodes, and is cleaned up by terminating nodes through cross-validation (class notes). Cross-validation is the process in which different samples of the training data are used to create the most effective model (class notes). The threshold (split in the Caret package) for the root of the tree is determined by whichever mean in the sample for that specific variable minimizes the sum of squared residuals. For example, consider 'avg annual police homicide rates for blacks' as the independent variable and 'killings by police per 10,000 arrests' as the dependent variable. The average value of 'killings by police per 10,000 arrests' that minimizes the sum of squared residuals sum(yi-ybar)^2 where yi is the y coordinate of the observation and y bar is the sample average for y, is the threshold. Many different thresholds are attempted, but the one that minimizes the SSR will be chosen (Statquest, Regression Trees). 
+
+In conclusion, regression trees are used in this project by starting with the most statistically significant independent variable (lowest p-value, highest t-stat), it's binary threshold (a< or > a) by minimizing the SSR, and then completes the process over again with the next most significant variable. The trees are 'pruned' or made more exact through cross validation, and trees generally have the largest depth of 30 nodes with each split determined by reducing SSE/enough data available. 
+
+
+### Kth Nearest Neighbor 
+
+From class lecture and reading: 
+
+kNN is a supervised algorithm that can be used for both classification and regression problems. It does not produce a model. The steps for kNN with a numeric outcome are as follows: start with a set of cases with known Xs and Y, then for each new case (with unknown Y) calculate the kth nearest neighbors based on Euclidean distances, and finally assign the mean as the predicted value for each new case. Finding the nearest neighbors requires a distance function, usually the Euclidean distance, to measure the similarity between two instances.
+
+We have to decide how many neighbors to use for kNN. This decides how well the model will generalize to the test data. A big k reduces variance, but it can cause bias by ignoring small patterns in the data. Overall, the value of k has a big effect on the outcome, so we try different values for the best result. A k value of sqrt(n)/2 is usually used as a good starting point. 
+
+We can assign different resampling methods to kNN. In this project, we use bootstrapping and assign a number of resampling iterations, which means the number of times we resample. The bootstrap method is a common way to choose the optimal k value, and it does so by averaging estimates from small data samples. These samples are made by taking observations from a big data sample one at a time, and then returning them to the sample after they have been picked.
+
+
+## Results
+
+### Random Forest
+Used to find the most important variables in order to subset our dataset
+```{r}
+library(caret) #calling the relevant library
+set.seed(1234) #setting seed
+index <- createDataPartition(police$Killings.by.Police.per.10k.Arrests, p=0.8, list=FALSE) # creating an index with killings by police per 10,000 arrests as the dependent variable. The training set will contain 80% of the overall data, while the testing set will have 20% of the data 
+train <- police[index, ] #assigning the training set to the training data frame
+test  <- police[-index, ] # assigning the testing set to the testing data frame
+
+library(randomForest) #calling library
+train.control <- trainControl(method="cv", number = 10) #using 10-fold cross-validation
+set.seed(1234) #setting seeed
+model.rf <- train(Killings.by.Police.per.10k.Arrests	 ~ ., #running the RF model with RMSE as the metric on the training data
+                  data = train,
+                  method = "rf",
+                  metric = "RMSE",
+                  tuneGrid = data.frame(mtry=4),
+                  trControl=train.control,
+                  ntree=100,
+                  importance=TRUE)
+
+model.rf$finalModel #looking at final model
+varImp(model.rf) #gathering the variable importance
+plot(varImp(model.rf)) #plotting the variable importance
+```
+
+Based on the important variables Random Forest found, we created a new data frame 'police_subset' listed below that is utilized in the subsequent models
+
+Data managment going into machine learning techniques: subsetted the dataset to contain only 19 variables rather than 41
+```{r}
+police$Black.White.Disparity[police$Black.White.Disparity == "No White People were Killed by Police"] <- 0 #turning 0 values from strings to numeric outcomes
+police$Black.White.Disparity[police$Black.White.Disparity == "No People were Killed by Police"] <- 0 #turning 0 values from strings to numeric outcomes
+police$Black.White.Disparity[police$Black.White.Disparity == "#DIV/0!"] <- 0 #turning 0 values from strings to numeric outcomes
+police$Hispanic.White.Disparity[police$Hispanic.White.Disparity == "No White People were Killed by Police"] <- 0 #turning 0 values from strings to numeric outcomes
+police$Hispanic.White.Disparity[police$Hispanic.White.Disparity == "No People were Killed by Police"] <- 0 #turning 0 values from strings to numeric outcomes
+police$Hispanic.White.Disparity[police$Hispanic.White.Disparity == "#DIV/0!"] <- 0 #turning 0 values from strings to numeric outcomes
+
+police_subset <- police[,c("Total", "Black", "White", "Hispanic", "Black.White.Dissimilarity.Index..2010.", "Avg.Annual.Police.Homicide.Rate.for.White.People", "X2017.Total.Arrests", "Murder.Rate", "Average.Violent.Crimes.Reported..2013.17.", "X2015.Total.Arrests", "X2016.Total.Arrests", "X2018.Total.Arrests", "Avg.Annual.Police.Homicide.Rate.for.Black.People","Avg.Annual.Police.Homicide.Rate.for.Hispanic.People", "X2014.Total.Arrests", "Black.White.Disparity", "Hispanic.White.Disparity", "Estimated.Average.Arrests.per.Year", "Killings.by.Police.per.10k.Arrests")] #keeping relevant variables
+
+
+police_subset$Black <- as.numeric(police_subset$Black) #turning population variables into numerics
+police_subset$White <- as.numeric(police_subset$White) #turning population variables into numerics
+police_subset$Hispanic <- as.numeric(police_subset$Hispanic) #turning population variables into numerics
+police_subset$Estimated.Average.Arrests.per.Year<- as.numeric(police_subset$Estimated.Average.Arrests.per.Year) #turning population variables into numerics
+police_subset$Total<- as.numeric(police_subset$Total) #turning population variables into numerics
+
+police_subset$Black.White.Disparity <- as.numeric(police_subset$Black.White.Disparity) #turning disparity variables to numerics
+police_subset$Hispanic.White.Disparity <- as.numeric(police_subset$Hispanic.White.Disparity) #turning disparity variables to numerics
+
+police_subset <- police_subset[-c(100:106),] # deleting missing observations
+save.image(file="police_subset.RData") #https://stackoverflow.com/questions/19967478/how-to-save-data-file-into-rdata
+```
+We used Random Forest to find the most important variables in order to make a subset. We used 10-fold cross validation, and we set mtry equal to 4. We recoded the values in the Black White Disparity and Hispanic White Disparity variables that were not defined since no white people had been killed to 0. We were then able to do some more data processing on the subset before running the models. The police subset now contains 19 variables (1 outcome variable and 18 predictors). The variables in the subset are the most important variables from the first run of random forest. These include Total, Black, White, Hispanic, Black.White.Dissimilarity.Index..2010., Avg.Annual.Police.Homicide.Rate.for.White.People, X2017.Total.Arrests, Murder.Rate, Average.Violent.Crimes.Reported..2013.17., X2015.Total.Arrests, X2016.Total.Arrests, X2018.Total.Arrests, Avg.Annual.Police.Homicide.Rate.for.Black.People, Avg.Annual.Police.Homicide.Rate.for.Hispanic.People, X2014.Total.Arrests, Black.White.Disparity, Hispanic.White.Disparity, Estimated.Average.Arrests.per.Year, Killings.by.Police.per.10k.Arrests. We then did some cleaning of this subset by changing variables to numeric and getting rid of missing observations.
+
+Note: we have noticed that when running random forest on our two computers, we get different outputs. This might just be the default settings of R and the set seed acting differently on the two computers.
+
+
+```{r} 
+#https://www.statmethods.net/graphs/scatterplot.html
+plot(police_subset$Avg.Annual.Police.Homicide.Rate.for.Black.People, police_subset$Killings.by.Police.per.10k.Arrests, main="Relationship Between Police Homicide Rates for Blacks and P Killings",
+   xlab="Police Homicide Rates for Blacks ", ylab="Police Killings per 10k Arrests ", pch=19) #summary statistics for blacks vs dependent variable
+
+abline(lm(police_subset$Avg.Annual.Police.Homicide.Rate.for.Black.People~police_subset$Killings.by.Police.per.10k.Arrests), col="red")
+#adding regression line
+
+plot(police_subset$Avg.Annual.Police.Homicide.Rate.for.White.People, police_subset$Killings.by.Police.per.10k.Arrests, main="Relationship Between Police Homicide Rates for Blacks and P Killings",
+   xlab="Police Homicide Rates for Whites ", ylab="Police Killings per 10k Arrests ", pch=19)
+
+#summary statistics for whites vs dependent variable
+
+abline(lm(police_subset$Avg.Annual.Police.Homicide.Rate.for.White.People~police_subset$Killings.by.Police.per.10k.Arrests), col="red")
+#adding regression line
+
+plot(police_subset$Avg.Annual.Police.Homicide.Rate.for.Hispanic.People, police_subset$Killings.by.Police.per.10k.Arrests, main="Relationship Between Police Homicide Rates for Blacks and P Killings",
+   xlab="Police Homicide Rates for Hispanics ", ylab="Police Killings per 10k Arrests ", pch=19)
+
+#summary statistics for hispanics vs dependent variable
+
+abline(lm(police_subset$Avg.Annual.Police.Homicide.Rate.for.Hispanic.People~police_subset$Killings.by.Police.per.10k.Arrests), col="red")
+#adding regression line
+
+summary(police_subset) #looking at summary statistics
+```
+It appears as though police homicide rates for blacks has the steepest best fit line. Therefore, there seems to be a stronger correlation between police killings per 10k arrests and police homicide rates for blacks than any other race. The machine learning techniques used will analyze these relationships further.
+
+
+### Regression Trees
+```{r analysis}
+# Dividing the data into a testing and training set
+set.seed(1234) # setting a seed to obtain consistent results
+library(caret) # calling the Caret library
+index <- createDataPartition(police_subset$Killings.by.Police.per.10k.Arrests, p=0.8, list=FALSE) # creating an index with killings by police per 10,000 arrests as the dependent variable. The training set will contain 80% of the overall data, while the testing set will have 20% of the data 
+train <- police_subset[index, ] #assigning the training set to the training data frame
+test  <- police_subset[-index, ] # assigning the testing set to the testing data frame
+
+#install.packages("party"), installing the relevant package for regression trees given the size of the data frame (i.e. can't use Caret)
+library(party) # calling the library
+
+trctrl <- trainControl(method="cv",  # setting up cross-validation 
+                       number=10, 
+                       selectionFunction="oneSE")
+
+fit <- ctree(Killings.by.Police.per.10k.Arrests ~ . , police_subset) #generating the regression trees with the methodology consistent to the description of regression trees above
+plot(fit) # plotting the regression trees
+
+fit # observing the decision behind making the necessary splits
+
+yhat <- predict(fit, test) # creating a new variable that sends the testing data through the regression tree to the terminal nodes. As seen in the next step, the RMSE will indicate how well the model (closeness to the median outcomes seen in the boxplot) predicted the data
+postResample(pred=yhat, obs=test$Killings.by.Police.per.10k.Arrests) # As seen , the RMSE, R-Squared, and mean absolute error are reported here
+```
+The model built with the training set illustrates that average annual police homicide rate for black people is the most significant variable explaining killings by police per 10,000 arrests (dependent variable) with an associated p-value of 0.003. This p-value shows that the estimation is highly statistically significant (at the 1% significance level), and we can reject the null hypothesis. The significance of average annual police homicide rate for black people is also supported by a large statistic (likely t-statistic) with a value of 14.456. The threshold that minimizes the SSR is 16.1. The following split is average annual police homicide rate for white people (P=0.012, t-statistic = 11.622). The threshold that minimizes the RMSE is 1.4, which is noticeably smaller than the threshold for blacks. The final split is average annual police homicide rate for hispanic people with a threshold of 4.3 (P=0.046, t-statistic = 9.047). This threshold is roughly 4x that of whites, indicating the large disparity between the two. All independent variables were considered when making this regression tree, but the three chosen represented the most important (statistically significant) ones. 
+
+When running the test data set through the model, we obtain a RMSE of 4.13 and a R-Squared of 0.489. For example, consider a police department (observation) with an annual police homicide rate for blacks, whites, and hispanics to be 13, 5, 3, respectively. Starting at the top split, the observation will go left (less than 16.1), then goes down to the right (greater than 1.4), and finishes at Node 5 (less than 4.3 for hispanics). If the observation's killings by police per 10,000 arrests is not the predicted value by the node (median), there is an error (calculated as RMSE). The RMSE in this prediction of 4.13 is the square root of the averaged differences between (y and y hat)^2. The R-Squared represents that these variables explain 48.9%% of the variation in average killings by police per 10,000 arrests. We cannot fully discuss the importance of these metrics until those of other models are calculated to compare.
+
+### Multiple Linear Regression
+
+```{r plot}
+# Dividing the data into a testing and training set
+set.seed(1234) # setting a seed to obtain consistent results
+library(caret) # calling the Caret library
+index <- createDataPartition(police_subset$Killings.by.Police.per.10k.Arrests, p=0.8, list=FALSE) # creating an index with killings by police per 10,000 arrests as the dependent variable. The training set will contain 70% of the overall data, while the testing set will have 30% of the data 
+train <- police_subset[index, ] #assigning the training set to the training data frame
+test  <- police_subset[-index, ] # assigning the testing set to the testing data frame
+
+
+model.lm <- train(Killings.by.Police.per.10k.Arrests ~ . , 
+                  data=train,
+                  method="lm",
+                  trControl = trainControl(method="none"), 
+                  metric="RMSE") # multiple linear regression with no train control
+
+summary(model.lm) # significant coefficient for African Americans, insignificant for other races 
+##--------------------------------------------------------
+## visualize linear regression
+##--------------------------------------------------------
+#install.packages("visreg")
+library(visreg)
+visreg(model.lm, gg=TRUE)
+
+test$predicted_killings_bypolice <- predict(model.lm, newdata = test) #creating a test (predicted_killings) variable from the model
+postResample(pred = test$predicted_killings_bypolice, obs = test$Killings.by.Police.per.10k.Arrests) #looking at RMSE
+
+```
+The statistically significant variables are the following: Black/White disparity (P=0.0218, coefficient = 2.353), Average annual police homicide rate for Black People (P=0.0349, coefficient = 2.156), Average violent crimes reported between 2013 and 2017 (P=0.0126, coefficient = 2.569), Average annual police homicide rate for white people (P = 0.0285, coefficient = 2.243), black/white dissimilarity index (P = 0.0536, coefficient = 1.968), and estimated average arrests per year (P = 0.0675, coefficient = 1.861). The model with the training data has an R-Squared of 0.5175, an adjusted R-Squared of 0.3774, and a significant F-Stat (P=6.298*10^-5, F=3.694). 
+
+Since these coefficients are statistically significant, the interpretation is when each of these independent variables increase by one unit individually, the killings by police per 10,000 arrests also increases by the estimated parameter (no statistically significant negative coefficients). In particular, the black/white disparity is the primary independent variable of interest. Therefore, its statistical significance is important in determining whether or not police reforms have done a good enough job to eliminate racial biases by this time in the 21st century. Also, since it is inherently correlated with average annual police homicide rates for whites and blacks, the latter two are controlled for to reduce any omitted variable bias.
+
+Finally, using the predict function with the testing data, we observed that the RMSE = 13.572, R-Squared = 0.330, and the mean absolute error is 5.632 The interpretations of these metrics are the same as the regression trees. Therefore, since we obtained a greater RMSE (less precision with the test data) and a lower R-Squared when running the test data through the model relative to the regression tree method, we can conclude that regression trees are likely more accurate in predicting average annual police homicide rates per 10,000 arrests. 
+
+
+### Stepwise AIC Multiple Linear Regression
+```{r}
+# Dividing the data into a testing and training set
+set.seed(1234) # setting a seed to obtain consistent results
+library(caret) # calling the Caret library
+index <- createDataPartition(police_subset$Killings.by.Police.per.10k.Arrests, p=0.8, list=FALSE) # creating an index with killings by police per 10,000 arrests as the dependent variable. The training set will contain 70% of the overall data, while the testing set will have 30% of the data 
+train <- police_subset[index, ] #assigning the training set to the training data frame
+test  <- police_subset[-index, ] # assigning the testing set to the testing data frame
+train.control <- trainControl(method="cv", number=5) # 5-fold cross validation
+model <- train(Killings.by.Police.per.10k.Arrests ~ ., data=train ,method="lmStepAIC",trControl=train.control, metric = "RMSE")
+#building Stepwise model with RMSE as metric, 5-fold CV
+summary(model$finalModel)# observing model
+
+test$predicted_murder <- predict(model, newdata = test) #using predict function with test data and original model
+postResample(pred = test$predicted_murder, obs = test$Killings.by.Police.per.10k.Arrests) #looking at RMSE and R-Squared
+```
+The statistically significant variables are the following: Black/White disparity (P=0.00676, coefficient = 2.792), total arrests in 2015 (P=3.51*10^-5, coefficient = -4.421), Average annual police homicide rate for Black People (P=0.02696, coefficient = 2.260), Average annual homicide rate by police for white people (P=0.00871, coefficient = 2.699), Average violent crimes reported between 2013 and 2017 (P=0.00169, coefficient = 3.267), Average annual police homicide rate for hispanics (P = 0.05462, coefficient = 1.955), Estimated average arrests per year (P = 0.04350, coefficient = 2.056) and black/white dissimilarity (P=0.05185, coefficient = 1.978). The model with the training data has an R-Squared of 0.502, an adjusted R-Squared of 0.4308, and a significant F-Stat (P=1.483x10^-7), F=7.055). 
+
+These statistically significant coefficients all have the interpretations of a one unit increase in them leads to an associated increase/decrease (depending on the sign) of killing by police per 10,000 arrests. An interesting point to note in this model is that the coefficients and p-values are quite similar to the multiple linear regression. The black/white disparity estimates, the key independent variable of interest, are very close between models. Therefore, it appears as though the estimate is quite robust. 
+
+Using the testing data, the RMSE, R-Squared, and MAE are 13.442, 0.321, and 5.799, respectively. These metrics are slightly better than the linear regression since the RMSE (precision of the model) is smaller/more precise. Further, since this model does not use all the independent variables (minimizing AIC), the adjusted R-Squared is likely larger than that of the linear regression since the multiple R-Squared for both models are similar. Further, since 5-fold cross validation is used, the model is likely more robust across different data. Therefore, it seems like stepwise is more precise than the multiple linear regression in its estimates; however, both models still lag in precision relative to regression trees where the latter has by far the smallest RMSE and highest R-Squared values (more precise, explains more). 
+
+
+### kNN
+
+```{r}
+library(caret) # calling the caret package
+index <- createDataPartition(police_subset$Killings.by.Police.per.10k.Arrests, p=.8, list=FALSE) # creating data partition for split
+train <- police_subset[index, ] # setting training set
+test  <- police_subset[-index, ] #setting testing set
+train_control<- trainControl(method="boot", number=50) #setting training control 
+
+# train the model
+set.seed(1234) #setting seed
+model.knn<- train(Killings.by.Police.per.10k.Arrests ~ ., data=train, #creating the model on the training set
+                 trControl=train_control, 
+                 method="knn",
+                 tuneGrid=data.frame(k=5),
+                 metric = "RMSE")
+
+model.knn #calling the model
+model.knn$resample
+mean(model.knn$resample$RMSE) #looking at the RMSE
+```
+For this project, we tried running kNN after using regression techniques. It used 81 samples and 18 predictors. For the train control, we used the boot method with 50 resampling iterations. We tried different values of k, and the best was 5. This resulted in an RMSE of 7.55 and R-squared of 0.0364. RMSE is the measure of differences between values that were predicted and the values that were observed. R-squared is the proportion of the variance in the dependent variable that can be predicted by the independent variable. kNN resulted in a relatively low RMSE (compared to stepwise and MLR, but higher than regression trees) and lowest R-squared of the models we used, which means that it is not as effective as the other models. 
+
+
+Based on the results using test data on all the models, it appears that the regression tree model was the most effective technique because it produced a low RMSE value and relatively high R-squared value.
+
+
+## Discussion
+
+### What did you find? How well were you able to solve the problem? 
+
+The findings in this research convey that significant biases do exist in the data. That is, the statement 'police reforms in the 21st century have eliminated biases against minorities' is falsified by this research. The regression trees, multiple linear regression output, and stepwise multiple linear regression output all pointed to average annual homicide rate by police for black people as a statistically significant indicator. When the police homicide rate for blacks increases by one unit, the effect on killings by police per 10,000 arrests is both positive and significant (nearly as high as whites when not controlling for population). Therefore, this variable explains a significant portion of the dependent variable. The data, as a result, backs up the claim that police brutality against blacks in this form is still a serious issue and tendency. 
+
+The multiple linear regression as well as the stepwise multiple linear regression provided conveyed the significant effects that black white disparity has on killings by police per 10,000 arrests. The research produced a positive and significant coefficient for black/white disparity's effects on killings by police per 10,000 arrests (2.353). The stepwise AIC model's estimated parameter is 2.792 at the 0.1% significance level. The kNN model did not provide insightful results for this variable's parameter. We are able to extrapolate from the regression tree model that black/white disparity likely has a significant effect as well (just not estimated) since there is perfect collinearity between the model's two significant variables (average annual homicide rate by police for blacks and average annual homicide rate by police for whites) and black white disparity.
+
+As noted above, the average annual homicide rates by police for blacks were significant variables across models. Average annual homicide rates by police for hispanics and whites, respectively, are also both significant for the stepwise AIC model. For the multiple regression, only homicide rates by police for blacks and whites are significant. The estimated parameters for whites are 2.156 (MLR) and 2.60 (stepwise). While these results point to a one unit increase in police homicide rates for whites leading to those corresponding increases in killings by police per 10,000 arrests, homicide rates rate not controlled for by population. Since the U.S. Census Bureau states that the 2019 racial breakdown (races analyzed in this project) are 76.3% White, 13.4% Black, and 18.5% Hispanic, the average annual homicide rates should be adjusted (https://www.census.gov/quickfacts/fact/table/US/PST045219). If that is done, it is likely that the homicide rate by police for Whites would get deflated, and the same rate for Blacks would be relatively inflated. The estimated parameters would likely be far greater for blacks as a result. 
+
+Another significant variable in determining killings per 10k arrests were the total number of arrests that the police department had per year. This is an interesting rate to take into consideration, as it can help us understand if a city is more violent and/or if there is a more aggressive police force in that city. We found that there is a correlation between a city with more arrests and more killings. This is what we expected to find, and we believe this fact can be used to validate the need for reform in certain cities and police departments within those cities.
+
+We did not get statistically significant results for the relationship between hispanic homicide rates and killings per 10k arrests. While our model does support the hypothesis that police are still inherently more aggressive against black people, it does not validate the notion that this holds true for other minority groups. It would be interesting to look into other races more.
+
+### What are the implications for further use? 
+
+First, the change in presidency will likely bring about more vocal change. President-elect Biden's Administration will analyze data like these more at greater lengths than the previous administration and try to make change. As seen by the research, these problems are still incredibly important, not just one-off events. Hopefully there will be more of a focus on analyzing the data to make change rather than blaming political parties,
+
+Second, including fixed-regional effects would be an interesting extension. Certain parts of the U.S. (Midwest, Southeast, Pacific Northwest, etc) likely sees similar trends as a region. Therefore, encoding a dummy variable by region to discern any regional effects would be insightful. While this dataset did not have those effects, further research could use them to make targeted reform.
+
+Next, another possible implication for further use is to compare these results to that of the same study in several subsequent years. After this year of many protests and demands for police reform, we believe that it would be interesting to see if the results change and the reforms become a reality. 
+
+Finally, an implication is sharing our results to increase awareness of the issues that remain in the police force across the United States. Being able to back up the claim that police are still inherently more aggressive against minorities with concrete numbers would be helpful in spreading this message, and hopefully, trying to mitigate this issue.
+
+### What suggestions do you have for other researchers who want to take your work further?
+
+After cleaning and making a subset of our data to an appropriate level, we only had 19 variables with 99 observations. Therefore, we did not have enough power to use Extreme Gradient Boost or Regression Trees in Caret. Other black box methods couldn't be used either because of the small data set. However, we still wanted to use these data since they answer such powerful questions. In a perfect world, though, we would've liked to have a larger set, so we wouldn't be limited on which techniques to use.
+
+Another important way of taking our work further is to target certain reforms in the police force in the United States. Our work focuses on the department level, which seems like a beneficial place to start and then expand to the entire country. 
+
+Similar to the fixed-regional effects, zeroing in on specific states would be insightful. Local policymakers could hone in on their states and counties, and compare them to their peers. By doing this, more effective change can be made. This project was more high-level in that we only used the data available to us (quite small and not having a regional component). In the future, adding county-level or state-level effects would be useful.
+
+Researchers should also look into the context of such violent incidents. Acquiring more data for variables about how and why these killings occurred, as well as when incidents do not lead to a death, could be beneficial in improving this model. It would also be useful to look into the aftermath of such incidents. For example, getting data on what happens to the police officer after such an occurrence. 
+
+
+## References
+
+Gillespie, Colin. “How to Remove Rows With Any Zero Value.” Stack Overflow, 2012, stackoverflow.com/questions/9977686/how-to-remove-rows-with-any-zero-value. 
+
+Kabacoff, Robert I. Lecture notes on Regression Trees, Multiple Linear Regression, kNN, Cross-validation, Stepwise AIC Linear Regression. QAC385-01-Fa2020 - Applications of Machine Learning in Data Analysis, 2020.
+
+Kabacoff, Robert I. “Scatterplots.” Quick-R, DataCamp, 2017, www.statmethods.net/graphs/scatterplot.html. 
+
+Kelly, Kimbriell, Sarah Childress, and Steven Rich. “Justice Department Forces Police Reforms. But Have They Worked?” The Washington Post, WP Company, 13 Nov. 2015, www.washingtonpost.com/sf/investigative/2015/11/13/forced-reforms-mixed-results/.
+
+Meys, Joris. “Remove Rows with All or Some NAs (Missing Values) in Data.frame.” Stack Overflow, 2011, stackoverflow.com/questions/4862178/remove-rows-with-all-or-some-nas-missing-values-in-data-frame. 
+
+Sauer, Sebastian. “Different Ways to Count NAs Over Multiple Columns.” Sebastian Sauer Stats Blog, 8 Sept. 2017, sebastiansauer.github.io/sum-isna/. 
+
+Sinyangwe, Samuel, DeRay McKesson, and Johnetta Elzie, Mapping Police Violence, 2015, mappingpoliceviolence.org/.
+
+Stackoverflow, "How to save data file into .RData?", https://stackoverflow.com/questions/19967478/how-to-save-data-file-into-rdata
+
+Starmer, Josh, Regression Trees, Clearly Explained!!!" Statquest, 2019, www.youtube.com/watch?v=g9c66TUylZ4.
+
+“U.S. Census Bureau QuickFacts: United States.” Census Bureau QuickFacts, 2019, www.census.gov/quickfacts/fact/table/US/PST045219. 
